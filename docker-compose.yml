@@ -1,0 +1,65 @@
+# docker-compose.yml
+
+services:
+  # 1. The PostgreSQL Database Service
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: project_titan_db
+    # Use your actual username and password here
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=CHACHU2206
+      - POSTGRES_DB=project_titan_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    ports:
+      - "5432:5432"
+    healthcheck:
+      # Update the user for the healthcheck as well
+      test: ["CMD-SHELL", "pg_isready -U postgres -d project_titan_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. The Redis Message Broker Service
+  redis:
+    image: redis:7-alpine
+    container_name: project_titan_redis
+
+  # 3. The FastAPI API Service
+  api:
+    build: .
+    container_name: project_titan_api
+    command: uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    # Update the DATABASE_URL with your credentials
+    environment:
+      - DATABASE_URL=postgresql://postgres:CHACHU2206@db:5432/project_titan_db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 4. The Celery Worker Service
+  worker:
+    build: .
+    container_name: project_titan_worker
+    command: celery -A celery_app.celery worker -P eventlet --loglevel=info
+    volumes:
+      - .:/app
+    # Update the DATABASE_URL with your credentials here too
+    environment:
+      - DATABASE_URL=postgresql://postgres:CHACHU2206@db:5432/project_titan_db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+# This must be at the top level with no indentation
+volumes:
+  postgres_data:
